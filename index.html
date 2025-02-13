@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eidsfoss Marked 2025</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+    <style>
+        .editor-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .editor-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 800px;
+        }
+        .editor-container textarea {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 10px;
+        }
+        .editor-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <header>
+            <h1>Eidsfoss Marked 2025</h1>
+            <span id="version">v1.0</span>
+        </header>
+        <h2>Parkering</h2>
+    </div>
+    
+    <div class="nav-menu">
+        <a href="#" data-page="prosjektstatus">Status</a>
+        <a href="#" data-page="beskrivelse">Beskrivelse</a>
+        <a href="#" data-page="arbeidsliste">Arbeidsliste</a>
+        <a href="#" data-page="ressurser">Ressurser</a>
+        <a href="#" data-page="skilting_og_hensyn">Skilting</a>
+    </div>
+    
+    <div class="container">
+        <div class="content">
+            <div id="beskrivelse" class="file-section active">
+                <h3>Prosjektbeskrivelse</h3>
+                <div class="markdown-content"></div>
+            </div>
+
+            <div id="prosjektstatus" class="file-section">
+                <h3>Prosjektstatus</h3>
+                <div class="markdown-content"></div>
+            </div>
+
+            <div id="arbeidsliste" class="file-section">
+                <h3>Arbeidsliste</h3>
+                <div class="markdown-content"></div>
+            </div>
+
+            <div id="ressurser" class="file-section">
+                <h3>Ressurser</h3>
+                <div class="markdown-content"></div>
+            </div>
+
+            <div id="skilting_og_hensyn" class="file-section">
+                <h3>Skilting og Hensyn</h3>
+                <div class="markdown-content"></div>
+            </div>
+        </div>
+        <p class="update-info">Sist oppdatert: 12.02.2025</p>
+    </div>
+
+    <div id="editorOverlay" class="editor-overlay">
+        <div class="editor-container">
+            <textarea id="editor"></textarea>
+            <div class="editor-buttons">
+                <button onclick="cancelEdit()">Avbryt</button>
+                <button onclick="saveEdit()">Lagre</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.local.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

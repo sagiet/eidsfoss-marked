@@ -1,0 +1,4 @@
+# Lokale konfigurasjonsfiler
+config.local.js
+*.local.js
+node_modules/
