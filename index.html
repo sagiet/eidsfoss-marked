@@ -7,7 +7,8 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
-    <script src="https://accounts.google.com/gsi/client"></script>
+    <script src="https://accounts.google.com/gsi/client" async></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/10.5.27/jsrsasign-all-min.js"></script>
     <style>
         .editor-overlay {
             display: none;
@@ -45,7 +46,6 @@
         <header>
             <h1>Eidsfoss Marked 2025</h1>
             <span id="version">v1.0</span>
-            <button id="login" onclick="handleAuthClick()">Logg inn med Google</button>
         </header>
         <h2>Parkering</h2>
     </div>

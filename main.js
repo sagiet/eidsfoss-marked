@@ -347,61 +347,83 @@ if (typeof localConfig !== 'undefined') {
 }
 
 // Google Drive API oppsett
-const CLIENT_ID = config.CLIENT_ID;
 const API_KEY = config.API_KEY;
-const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
-// Redirect URI for OAuth
-const REDIRECT_URI = window.location.origin + window.location.pathname.replace(/\/$/, '');
-
-let tokenClient;
-let gapiInited = false;
-let gisInited = false;
-
-// Mappe-ID for hvor MD-filene ligger i Google Drive
 const FOLDER_ID = config.FOLDER_ID;
+const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 
-/**
- * Callback etter at api.js er lastet.
- */
-function gapiLoaded() {
-    gapi.load('client', initializeGapiClient);
-}
+// Last service account credentials
+fetch('service-account.json')
+    .then(response => response.json())
+    .then(credentials => {
+        gapi.load('client', async () => {
+            await gapi.client.init({
+                apiKey: API_KEY,
+                discoveryDocs: [DISCOVERY_DOC],
+            });
 
-/**
- * Callback etter at gis er lastet.
- */
-function gisLoaded() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        callback: '', // Defineres ved autorisering
-        prompt: 'consent'
+            // Sett opp service account autentisering
+            gapi.auth.setToken({
+                access_token: await getAccessToken(credentials),
+                token_type: 'Bearer'
+            });
+
+            console.log('Google Drive API er klar til bruk');
+            loadAllContent();
+        });
     });
-    gisInited = true;
-    maybeEnableButtons();
-}
 
-async function initializeGapiClient() {
-    await gapi.client.init({
-        apiKey: API_KEY,
-        discoveryDocs: [DISCOVERY_DOC],
+// Hent access token fra service account
+async function getAccessToken(credentials) {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            assertion: createJWT(credentials)
+        })
     });
-    gapiInited = true;
-    maybeEnableButtons();
+
+    const data = await response.json();
+    return data.access_token;
 }
 
-// Sjekk om vi er klare til å bruke API-en
-function maybeEnableButtons() {
-    if (gapiInited && gisInited) {
-        console.log('Google Drive API er klar til bruk');
-        loadContent();
-    }
+// Opprett JWT for service account autentisering
+function createJWT(credentials) {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 3600; // 1 time
+
+    const header = {
+        alg: 'RS256',
+        typ: 'JWT',
+        kid: credentials.private_key_id
+    };
+
+    const claim = {
+        iss: credentials.client_email,
+        sub: credentials.client_email,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: exp,
+        scope: 'https://www.googleapis.com/auth/drive.file'
+    };
+
+    const headerB64 = KJUR.jws.JWS.itype2jws(header);
+    const claimB64 = KJUR.jws.JWS.itype2jws(claim);
+
+    const jwt = KJUR.jws.JWS.sign(
+        'RS256',
+        headerB64,
+        claimB64,
+        credentials.private_key
+    );
+
+    return jwt;
 }
 
 // Last inn innhold fra MD-filer i Google Drive
-async function loadContent() {
+async function loadAllContent() {
     try {
         const sections = ['beskrivelse', 'prosjektstatus', 'arbeidsliste', 'ressurser', 'skilting_og_hensyn'];
         
@@ -547,4 +569,36 @@ function loadGoogleAPI() {
     script2.src = 'https://accounts.google.com/gsi/client';
     script2.onload = gisLoaded;
     document.head.appendChild(script2);
+}
+
+function gapiLoaded() {
+    gapi.load('client', initializeGapiClient);
+}
+
+function gisLoaded() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: '', // Defineres ved autorisering
+        prompt: 'consent'
+    });
+    gisInited = true;
+    maybeEnableButtons();
+}
+
+async function initializeGapiClient() {
+    await gapi.client.init({
+        apiKey: API_KEY,
+        discoveryDocs: [DISCOVERY_DOC],
+    });
+    gapiInited = true;
+    maybeEnableButtons();
+}
+
+// Sjekk om vi er klare til å bruke API-en
+function maybeEnableButtons() {
+    if (gapiInited && gisInited) {
+        console.log('Google Drive API er klar til bruk');
+        loadAllContent();
+    }
 }
