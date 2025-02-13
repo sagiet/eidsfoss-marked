@@ -334,58 +334,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Hent API-nøkler fra config
-const config = {
-    CLIENT_ID: '', // Sett denne i config.local.js
-    API_KEY: '',   // Sett denne i config.local.js
-    FOLDER_ID: ''  // Sett denne i config.local.js
-};
-
-// Last inn config fra config.local.js hvis den finnes
-if (typeof localConfig !== 'undefined') {
-    Object.assign(config, localConfig);
-}
-
-// Google Drive API oppsett
-const API_KEY = config.API_KEY;
-const FOLDER_ID = config.FOLDER_ID;
+// Google Drive API konfigurasjon
+const API_KEY = window.config.API_KEY;
+const FOLDER_ID = window.config.FOLDER_ID;
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 
-// Last service account credentials
-fetch('service-account.json')
-    .then(response => response.json())
-    .then(credentials => {
-        gapi.load('client', async () => {
+// Last inn Google Drive API
+function loadGoogleAPI() {
+    gapi.load('client', async () => {
+        try {
             await gapi.client.init({
                 apiKey: API_KEY,
                 discoveryDocs: [DISCOVERY_DOC],
             });
 
+            // Last inn service account credentials
+            const response = await fetch('service-account.json');
+            const credentials = await response.json();
+            
             // Sett opp service account autentisering
-            gapi.auth.setToken({
-                access_token: await getAccessToken(credentials),
-                token_type: 'Bearer'
+            const accessToken = await getAccessToken(credentials);
+            gapi.client.setToken({
+                access_token: accessToken
             });
 
             console.log('Google Drive API er klar til bruk');
             loadAllContent();
-        });
+        } catch (err) {
+            console.error('Feil ved initialisering av Google API:', err);
+        }
     });
+}
 
 // Hent access token fra service account
 async function getAccessToken(credentials) {
+    const jwt = createJWT(credentials);
+    
     const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-            grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-            assertion: createJWT(credentials)
-        })
+        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
     });
 
     const data = await response.json();
+    if (!response.ok) {
+        throw new Error('Kunne ikke hente access token: ' + JSON.stringify(data));
+    }
     return data.access_token;
 }
 
@@ -402,114 +398,137 @@ function createJWT(credentials) {
 
     const claim = {
         iss: credentials.client_email,
-        sub: credentials.client_email,
+        scope: 'https://www.googleapis.com/auth/drive.file',
         aud: 'https://oauth2.googleapis.com/token',
-        iat: now,
         exp: exp,
-        scope: 'https://www.googleapis.com/auth/drive.file'
+        iat: now
     };
 
-    const headerB64 = KJUR.jws.JWS.itype2jws(header);
-    const claimB64 = KJUR.jws.JWS.itype2jws(claim);
+    const sHeader = JSON.stringify(header);
+    const sClaim = JSON.stringify(claim);
 
-    const jwt = KJUR.jws.JWS.sign(
-        'RS256',
-        headerB64,
-        claimB64,
-        credentials.private_key
-    );
-
-    return jwt;
+    const sJWT = KJUR.jws.JWS.sign(null, sHeader, sClaim, credentials.private_key);
+    return sJWT;
 }
 
-// Last inn innhold fra MD-filer i Google Drive
+// Last inn innhold fra Google Drive
 async function loadAllContent() {
     try {
         const sections = ['beskrivelse', 'prosjektstatus', 'arbeidsliste', 'ressurser', 'skilting_og_hensyn'];
         
-        for (const sectionId of sections) {
-            const fileName = `${sectionId}.md`;
-            const fileId = await findOrCreateFile(fileName);
-            
-            if (fileId) {
-                const content = await readFile(fileId);
-                const contentDiv = document.querySelector(`#${sectionId} .markdown-content`);
-                if (contentDiv) {
-                    contentDiv.innerHTML = marked.parse(content);
-                    contentDiv.setAttribute('data-file-id', fileId);
-                    addEditButton(contentDiv);
-                }
-            }
+        for (const section of sections) {
+            console.log(`Laster seksjon: ${section}`);
+            const fileName = `${section}.md`;
+            await loadMarkdownFile(fileName, section);
         }
     } catch (err) {
         console.error('Feil ved lasting av innhold:', err);
     }
 }
 
-// Finn eller opprett MD-fil i Google Drive
-async function findOrCreateFile(fileName) {
+// Last inn markdown fil fra Google Drive
+async function loadMarkdownFile(fileName, section) {
     try {
-        // Søk etter eksisterende fil
+        console.log(`Laster inn fil: ${fileName} for element: ${section}`);
+        
+        // Finn filen i Google Drive
         const response = await gapi.client.drive.files.list({
             q: `name='${fileName}' and '${FOLDER_ID}' in parents and trashed=false`,
             fields: 'files(id, name)',
             spaces: 'drive'
         });
 
+        let fileId;
         if (response.result.files.length > 0) {
-            return response.result.files[0].id;
+            fileId = response.result.files[0].id;
+        } else {
+            // Opprett ny fil hvis den ikke finnes
+            const fileMetadata = {
+                name: fileName,
+                parents: [FOLDER_ID],
+                mimeType: 'text/markdown'
+            };
+            const newFile = await gapi.client.drive.files.create({
+                resource: fileMetadata,
+                fields: 'id'
+            });
+            fileId = newFile.result.id;
         }
 
-        // Opprett ny fil hvis den ikke finnes
-        const fileMetadata = {
-            name: fileName,
-            parents: [FOLDER_ID],
-            mimeType: 'text/markdown'
-        };
-
-        const newFile = await gapi.client.drive.files.create({
-            resource: fileMetadata,
-            fields: 'id'
-        });
-
-        return newFile.result.id;
+        // Les filinnhold
+        const content = await readFile(fileId);
+        updateContent(section, content, fileId);
     } catch (err) {
-        console.error('Feil ved søk/opprettelse av fil:', err);
-        return null;
+        console.error('Feil ved lasting av fil:', err);
     }
 }
 
-// Les innhold fra fil
+// Les innhold fra fil i Google Drive
 async function readFile(fileId) {
     try {
         const response = await gapi.client.drive.files.get({
             fileId: fileId,
             alt: 'media'
         });
-        return response.body;
+        return response.body || '';
     } catch (err) {
         console.error('Feil ved lesing av fil:', err);
         return '';
     }
 }
 
-// Lagre endringer til MD-fil
-async function saveFile(fileId, content) {
+// Oppdater innhold i en seksjon
+function updateContent(section, content, fileId) {
+    const element = document.getElementById(section);
+    if (element) {
+        element.innerHTML = marked.parse(content);
+        element.setAttribute('data-file-id', fileId);
+        makeEditable(element);
+    }
+}
+
+// Gjør en seksjon redigerbar
+function makeEditable(element) {
+    element.addEventListener('dblclick', () => {
+        const content = element.getAttribute('data-markdown') || element.innerText;
+        const fileId = element.getAttribute('data-file-id');
+        showEditor(content, async (newContent) => {
+            await saveToGoogleDrive(fileId, newContent);
+            element.innerHTML = marked.parse(newContent);
+            element.setAttribute('data-markdown', newContent);
+        });
+    });
+}
+
+// Lagre innhold til Google Drive
+async function saveToGoogleDrive(fileId, content) {
     try {
-        const file = new Blob([content], {type: 'text/markdown'});
+        const boundary = '-------314159265358979323846';
+        const delimiter = "\r\n--" + boundary + "\r\n";
+        const close_delim = "\r\n--" + boundary + "--";
+
+        const contentType = 'text/markdown';
         const metadata = {
-            mimeType: 'text/markdown'
+            mimeType: contentType
         };
 
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], {type: 'application/json'}));
-        form.append('file', file);
+        const multipartRequestBody =
+            delimiter +
+            'Content-Type: application/json\r\n\r\n' +
+            JSON.stringify(metadata) +
+            delimiter +
+            'Content-Type: ' + contentType + '\r\n\r\n' +
+            content +
+            close_delim;
 
         await gapi.client.request({
-            path: '/upload/drive/v3/files/' + fileId,
-            method: 'PATCH',
-            params: {uploadType: 'multipart'},
-            body: form
+            'path': '/upload/drive/v3/files/' + fileId,
+            'method': 'PATCH',
+            'params': {'uploadType': 'multipart'},
+            'headers': {
+                'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+            },
+            'body': multipartRequestBody
         });
 
         console.log('Fil lagret i Google Drive');
@@ -518,87 +537,5 @@ async function saveFile(fileId, content) {
     }
 }
 
-// Rediger innhold
-function editContent(element) {
-    const content = element.getAttribute('data-markdown') || '';
-    const editor = document.getElementById('editor');
-    const overlay = document.getElementById('editorOverlay');
-    
-    editor.value = content;
-    overlay.style.display = 'flex';
-    
-    // Lagre referanse til elementet som redigeres
-    editor.setAttribute('data-editing-element', element.id);
-    editor.setAttribute('data-file-id', element.getAttribute('data-file-id'));
-}
-
-// Lagre endringer
-async function saveEdit() {
-    const editor = document.getElementById('editor');
-    const content = editor.value;
-    const fileId = editor.getAttribute('data-file-id');
-    
-    if (fileId) {
-        await saveFile(fileId, content);
-        const element = document.getElementById(editor.getAttribute('data-editing-element'));
-        if (element) {
-            element.innerHTML = marked.parse(content);
-            element.setAttribute('data-markdown', content);
-        }
-    }
-    
-    document.getElementById('editorOverlay').style.display = 'none';
-}
-
-// Avbryt redigering
-function cancelEdit() {
-    document.getElementById('editorOverlay').style.display = 'none';
-}
-
-// Start oppsett når siden lastes
+// Start oppsett når siden er lastet
 document.addEventListener('DOMContentLoaded', loadGoogleAPI);
-
-// Last inn Google API
-function loadGoogleAPI() {
-    const script1 = document.createElement('script');
-    script1.src = 'https://apis.google.com/js/api.js';
-    script1.onload = gapiLoaded;
-    document.head.appendChild(script1);
-
-    const script2 = document.createElement('script');
-    script2.src = 'https://accounts.google.com/gsi/client';
-    script2.onload = gisLoaded;
-    document.head.appendChild(script2);
-}
-
-function gapiLoaded() {
-    gapi.load('client', initializeGapiClient);
-}
-
-function gisLoaded() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        callback: '', // Defineres ved autorisering
-        prompt: 'consent'
-    });
-    gisInited = true;
-    maybeEnableButtons();
-}
-
-async function initializeGapiClient() {
-    await gapi.client.init({
-        apiKey: API_KEY,
-        discoveryDocs: [DISCOVERY_DOC],
-    });
-    gapiInited = true;
-    maybeEnableButtons();
-}
-
-// Sjekk om vi er klare til å bruke API-en
-function maybeEnableButtons() {
-    if (gapiInited && gisInited) {
-        console.log('Google Drive API er klar til bruk');
-        loadAllContent();
-    }
-}
