@@ -5,18 +5,22 @@ const FOLDER_ID = '1-0dYJQXnXF_Lq9l0oEfBYrJYVGpQKDEX';
 
 // API handler
 module.exports = async (req, res) => {
+  // Handle CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   try {
     console.log('Request received:', req.method, req.body);
-
-    // Handle CORS
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.status(200).end();
-      return;
-    }
+    console.log('Environment variables:', {
+      hasPrivateKey: !!process.env.PRIVATE_KEY,
+      privateKeyLength: process.env.PRIVATE_KEY?.length
+    });
 
     // Opprett JWT client
     const auth = new google.auth.JWT({
@@ -27,14 +31,26 @@ module.exports = async (req, res) => {
 
     console.log('JWT client created');
 
+    // Test autentisering
+    await auth.authorize();
+    console.log('Authentication successful');
+
     // Opprett Drive client
     const drive = google.drive({ version: 'v3', auth });
     console.log('Drive client created');
 
     const { action, fileName, fileId, content } = req.body;
 
+    if (!action) {
+      throw new Error('Missing action parameter');
+    }
+
     switch (action) {
       case 'read':
+        if (!fileName) {
+          throw new Error('Missing fileName parameter');
+        }
+
         console.log('Reading file:', fileName);
         // Find file by name
         const files = await drive.files.list({
@@ -55,7 +71,7 @@ module.exports = async (req, res) => {
             alt: 'media'
           });
 
-          res.json({ content: file.data, fileId: fileId });
+          return res.status(200).json({ content: file.data, fileId: fileId });
         } else {
           // Create new file if it doesn't exist
           console.log('Creating new file:', fileName);
@@ -71,11 +87,17 @@ module.exports = async (req, res) => {
             },
             fields: 'id'
           });
-          res.json({ content: '', fileId: newFile.data.id });
+          return res.status(200).json({ content: '', fileId: newFile.data.id });
         }
-        break;
 
       case 'write':
+        if (!fileId) {
+          throw new Error('Missing fileId parameter');
+        }
+        if (content === undefined) {
+          throw new Error('Missing content parameter');
+        }
+
         console.log('Writing to file:', fileId);
         
         await drive.files.update({
@@ -86,15 +108,14 @@ module.exports = async (req, res) => {
           }
         });
 
-        res.json({ success: true });
-        break;
+        return res.status(200).json({ success: true });
 
       default:
-        res.status(400).json({ error: 'Invalid action' });
+        return res.status(400).json({ error: 'Invalid action' });
     }
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error',
       details: error.message,
       stack: error.stack
