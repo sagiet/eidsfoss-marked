@@ -340,30 +340,43 @@ const FOLDER_ID = window.config.FOLDER_ID;
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 
 // Last inn Google Drive API
-function loadGoogleAPI() {
-    gapi.load('client', async () => {
-        try {
-            await gapi.client.init({
-                apiKey: API_KEY,
-                discoveryDocs: [DISCOVERY_DOC],
-            });
-
-            // Last inn service account credentials
-            const response = await fetch('service-account.json');
-            const credentials = await response.json();
-            
-            // Sett opp service account autentisering
-            const accessToken = await getAccessToken(credentials);
-            gapi.client.setToken({
-                access_token: accessToken
-            });
-
-            console.log('Google Drive API er klar til bruk');
-            loadAllContent();
-        } catch (err) {
-            console.error('Feil ved initialisering av Google API:', err);
+async function initializeGoogleAPI() {
+    try {
+        // Last inn service account credentials
+        const response = await fetch('service-account.json');
+        if (!response.ok) {
+            throw new Error('Kunne ikke laste service-account.json');
         }
-    });
+        const credentials = await response.json();
+
+        // Initialiser Google API
+        await new Promise((resolve, reject) => {
+            gapi.load('client', async () => {
+                try {
+                    await gapi.client.init({
+                        apiKey: API_KEY,
+                        discoveryDocs: [DISCOVERY_DOC],
+                    });
+
+                    // Sett opp service account autentisering
+                    const accessToken = await getAccessToken(credentials);
+                    gapi.client.setToken({
+                        access_token: accessToken
+                    });
+
+                    console.log('Google Drive API er klar til bruk');
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        });
+
+        // Last inn innhold
+        await loadAllContent();
+    } catch (err) {
+        console.error('Feil ved initialisering av Google API:', err);
+    }
 }
 
 // Hent access token fra service account
@@ -441,6 +454,7 @@ async function loadMarkdownFile(fileName, section) {
         let fileId;
         if (response.result.files.length > 0) {
             fileId = response.result.files[0].id;
+            console.log(`Fant eksisterende fil: ${fileName} med ID: ${fileId}`);
         } else {
             // Opprett ny fil hvis den ikke finnes
             const fileMetadata = {
@@ -453,6 +467,7 @@ async function loadMarkdownFile(fileName, section) {
                 fields: 'id'
             });
             fileId = newFile.result.id;
+            console.log(`Opprettet ny fil: ${fileName} med ID: ${fileId}`);
         }
 
         // Les filinnhold
@@ -483,6 +498,7 @@ function updateContent(section, content, fileId) {
     if (element) {
         element.innerHTML = marked.parse(content);
         element.setAttribute('data-file-id', fileId);
+        element.setAttribute('data-markdown', content);
         makeEditable(element);
     }
 }
@@ -538,4 +554,4 @@ async function saveToGoogleDrive(fileId, content) {
 }
 
 // Start oppsett når siden er lastet
-document.addEventListener('DOMContentLoaded', loadGoogleAPI);
+document.addEventListener('DOMContentLoaded', initializeGoogleAPI);
