@@ -1,35 +1,7 @@
 const { google } = require('googleapis');
 
-// Service account credentials
-const credentials = {
-  "type": "service_account",
-  "project_id": "cohesive-scope-450810-t5",
-  "private_key_id": process.env.PRIVATE_KEY_ID,
-  "private_key": process.env.PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  "client_email": "eidsfoss-marked-admin@cohesive-scope-450810-t5.iam.gserviceaccount.com",
-  "client_id": process.env.CLIENT_ID,
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": `https://www.googleapis.com/robot/v1/metadata/x509/eidsfoss-marked-admin@cohesive-scope-450810-t5.iam.gserviceaccount.com`
-};
-
-// Debug logging
-console.log('Environment variables:');
-console.log('PRIVATE_KEY_ID exists:', !!process.env.PRIVATE_KEY_ID);
-console.log('CLIENT_ID exists:', !!process.env.CLIENT_ID);
-console.log('PRIVATE_KEY exists:', !!process.env.PRIVATE_KEY);
-
 // Google Drive folder ID
-const FOLDER_ID = '1q69DfRrRHDZQ5UxjCc4myYZluTM7e4Kf';
-
-// Initialize Google Drive API
-const auth = new google.auth.GoogleAuth({
-  credentials,
-  scopes: ['https://www.googleapis.com/auth/drive.file']
-});
-
-const drive = google.drive({ version: 'v3', auth });
+const FOLDER_ID = '1-0dYJQXnXF_Lq9l0oEfBYrJYVGpQKDEX';
 
 // API handler
 module.exports = async (req, res) => {
@@ -46,18 +18,22 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const { method, action, fileName, content, fileId } = req.body;
+    // Opprett JWT client
+    const auth = new google.auth.JWT({
+      email: 'eidsfossmarked@cohesive-scope-450810-t5.iam.gserviceaccount.com',
+      key: process.env.PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      scopes: ['https://www.googleapis.com/auth/drive.file']
+    });
+
+    console.log('JWT client created');
+
+    // Opprett Drive client
+    const drive = google.drive({ version: 'v3', auth });
+    console.log('Drive client created');
+
+    const { action, fileName, fileId, content } = req.body;
 
     switch (action) {
-      case 'list':
-        // List files in folder
-        const response = await drive.files.list({
-          q: `'${FOLDER_ID}' in parents and trashed=false`,
-          fields: 'files(id, name, mimeType)',
-        });
-        res.json(response.data);
-        break;
-
       case 'read':
         console.log('Reading file:', fileName);
         // Find file by name
@@ -69,9 +45,8 @@ module.exports = async (req, res) => {
 
         console.log('Files found:', files.data.files);
 
-        let fileId;
         if (files.data.files.length > 0) {
-          fileId = files.data.files[0].id;
+          const fileId = files.data.files[0].id;
           console.log('Found existing file:', fileName, 'with ID:', fileId);
           
           // Read file content
@@ -110,6 +85,7 @@ module.exports = async (req, res) => {
             body: content
           }
         });
+
         res.json({ success: true });
         break;
 
@@ -120,7 +96,8 @@ module.exports = async (req, res) => {
     console.error('API Error:', error);
     res.status(500).json({ 
       error: 'Internal server error',
-      details: error.message
+      details: error.message,
+      stack: error.stack
     });
   }
 };
