@@ -352,29 +352,35 @@ const API_KEY = config.API_KEY;
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
-// Mappe-ID for hvor MD-filene ligger i Google Drive
-const FOLDER_ID = config.FOLDER_ID;
+// Redirect URI for OAuth
+const REDIRECT_URI = window.location.origin + window.location.pathname.replace(/\/$/, '');
 
 let tokenClient;
 let gapiInited = false;
 let gisInited = false;
 
-// Last inn Google API
-function loadGoogleAPI() {
-    const script1 = document.createElement('script');
-    script1.src = 'https://apis.google.com/js/api.js';
-    script1.onload = gapiLoaded;
-    document.head.appendChild(script1);
+// Mappe-ID for hvor MD-filene ligger i Google Drive
+const FOLDER_ID = config.FOLDER_ID;
 
-    const script2 = document.createElement('script');
-    script2.src = 'https://accounts.google.com/gsi/client';
-    script2.onload = gisLoaded;
-    document.head.appendChild(script2);
-}
-
-// Initialiser Google API
+/**
+ * Callback etter at api.js er lastet.
+ */
 function gapiLoaded() {
     gapi.load('client', initializeGapiClient);
+}
+
+/**
+ * Callback etter at gis er lastet.
+ */
+function gisLoaded() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: '', // Defineres ved autorisering
+        prompt: 'consent'
+    });
+    gisInited = true;
+    maybeEnableButtons();
 }
 
 async function initializeGapiClient() {
@@ -383,16 +389,6 @@ async function initializeGapiClient() {
         discoveryDocs: [DISCOVERY_DOC],
     });
     gapiInited = true;
-    maybeEnableButtons();
-}
-
-function gisLoaded() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        callback: '', // Defineres ved bruk
-    });
-    gisInited = true;
     maybeEnableButtons();
 }
 
@@ -539,3 +535,16 @@ function cancelEdit() {
 
 // Start oppsett når siden lastes
 document.addEventListener('DOMContentLoaded', loadGoogleAPI);
+
+// Last inn Google API
+function loadGoogleAPI() {
+    const script1 = document.createElement('script');
+    script1.src = 'https://apis.google.com/js/api.js';
+    script1.onload = gapiLoaded;
+    document.head.appendChild(script1);
+
+    const script2 = document.createElement('script');
+    script2.src = 'https://accounts.google.com/gsi/client';
+    script2.onload = gisLoaded;
+    document.head.appendChild(script2);
+}
